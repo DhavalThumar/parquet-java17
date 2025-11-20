@@ -1,4 +1,4 @@
-# Parquet Extension for Mule 4.x
+# Parquet Extension for Mule 4.x compatible with Java 17
 Mule SDK connector that provides the ability to read Parquet files into JSON or write Parquet files from Avro data.
 
 ## Overview
@@ -23,10 +23,6 @@ Using Parquet format has two advantages
     <classifier>mule-plugin</classifier>
 </dependency>
 ```
-
-## Reporting Issues
-
-You can report new issues at this link https://github.com/djuang1/parquet/issues.
 
 ## Operations
 
