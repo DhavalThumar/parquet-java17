@@ -14,6 +14,7 @@ Using Parquet format has two advantages
 1.  Clone the repo
 2.  Deploy the connector to your local Maven repo  `mvn clean install`
 3.  Add the connector dependency to your project `pom.xml` file
+4.  To test the code `mvn clean compile exec:java -Dexec.mainClass=TestParquetReader`
 
 ```
 <dependency>
