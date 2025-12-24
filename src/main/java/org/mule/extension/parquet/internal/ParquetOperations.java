@@ -135,6 +135,63 @@ public class ParquetOperations {
 				.withDictionaryEncoding(false).build();
 	}
 
+	// Add this method to your ParquetOperations class
+	private void enableZstdSupport(Configuration conf) {
+		try {
+			// Try to load ZSTD codec class from Hadoop 3.x
+			boolean hasZstd = false;
+			
+			try {
+				Class.forName("org.apache.hadoop.io.compress.ZStandardCodec");
+				hasZstd = true;
+				System.out.println("Found Hadoop ZStandardCodec");
+			} catch (ClassNotFoundException e1) {
+				// Try Parquet's ZstandardCodec
+				try {
+					Class.forName("org.apache.parquet.hadoop.codec.ZstandardCodec");
+					hasZstd = true;
+					System.out.println("Found Parquet ZstandardCodec");
+				} catch (ClassNotFoundException e2) {
+					// Try the standalone ZSTD JNI library
+					try {
+						Class.forName("com.github.luben.zstd.ZstdInputStream");
+						hasZstd = true;
+						System.out.println("Found standalone ZSTD JNI library");
+					} catch (ClassNotFoundException e3) {
+						System.out.println("Warning: ZSTD libraries not found in classpath");
+					}
+				}
+			}
+			
+			if (hasZstd) {
+				// Enable ZSTD support in Parquet
+				conf.setBoolean("parquet.hadoop.read.support.zstd", true);
+				
+				// Add ZSTD to Hadoop compression codecs list
+				String currentCodecs = conf.get("io.compression.codecs", "");
+				if (!currentCodecs.contains("ZStandardCodec")) {
+					String newCodecs = currentCodecs.isEmpty() ? 
+						"org.apache.hadoop.io.compress.ZStandardCodec" : 
+						currentCodecs + ",org.apache.hadoop.io.compress.ZStandardCodec";
+					conf.set("io.compression.codecs", newCodecs);
+				}
+				
+				// Set compression codec for ZSTD
+				try {
+					conf.setClass("io.compression.codec.zstd.class", 
+						Class.forName("org.apache.hadoop.io.compress.ZStandardCodec"), 
+						org.apache.hadoop.io.compress.CompressionCodec.class);
+				} catch (Exception e) {
+					// Ignore if we can't set it
+				}
+			}
+			
+		} catch (Exception e) {
+			System.out.println("Warning: ZSTD support initialization failed: " + e.getMessage());
+			e.printStackTrace();
+		}
+	}
+
 	@MediaType(value = MediaType.APPLICATION_JSON, strict = false)
 	@DisplayName("Read Parquet - File")
 	public String readParquet(
@@ -146,8 +203,16 @@ public class ParquetOperations {
 		String item = null;
 
 		try {
-			reader = ParquetReader.builder(new SimpleReadSupport(), new Path(parquetFilePath)).build();
-			ParquetMetadata metadata = ParquetFileReader.readFooter(new Configuration(), new Path(parquetFilePath));
+			Configuration conf = new Configuration();
+			
+			// Enable ZSTD support for file reading
+			enableZstdSupport(conf);
+			
+			reader = ParquetReader.builder(new SimpleReadSupport(), new Path(parquetFilePath))
+					.withConf(conf)
+					.build();
+			
+			ParquetMetadata metadata = ParquetFileReader.readFooter(conf, new Path(parquetFilePath));
 
 			JsonRecordFormatter.JsonGroupFormatter formatter = JsonRecordFormatter
 					.fromSchema(metadata.getFileMetaData().getSchema());
@@ -162,6 +227,14 @@ public class ParquetOperations {
 			e.printStackTrace();
 		} catch (IOException e) {
 			e.printStackTrace();
+		} finally {
+			if (reader != null) {
+				try {
+					reader.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
 		}
 		return array.toString();
 	}
@@ -235,6 +308,7 @@ public class ParquetOperations {
 		}
 		return records.toString();
 	}
+
 
 	private GenericRecord deserialize(Schema schema, byte[] data) throws IOException {
 		GenericData.get().addLogicalTypeConversion(new TimestampMillisConversion());
